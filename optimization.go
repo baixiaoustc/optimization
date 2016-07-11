@@ -9,6 +9,7 @@ import (
 	"time"
 	"strconv"
 	"math/rand"
+	"math"
 )
 
 var GDestination string = "LGA"
@@ -129,12 +130,13 @@ func optimizeRandom(domainList [][2]int, costF func([]int) int64) []int {
 	var maxCost int64 = 999999999
 	var bestSchedule []int
 
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 1000; i++ {
 		//fmt.Println("i", i)
 		schedule := make([]int, 0)
 		for _, domain := range domainList {
 			//fmt.Println(domain)
-			choice := rand.Intn(domain[1] - domain[0]) + domain[0]
+			choice := r.Intn(domain[1] - domain[0]) + domain[0]
 			schedule = append(schedule, choice)
 		}
 		//fmt.Println(schedule)
@@ -144,6 +146,101 @@ func optimizeRandom(domainList [][2]int, costF func([]int) int64) []int {
 			maxCost = cost
 			bestSchedule = schedule
 		}
+	}
+
+	return bestSchedule
+}
+
+//登山法优化
+func optimizeHillClimb(domainList [][2]int, costF func([]int) int64) []int {
+	var bestSchedule []int
+
+	fmt.Println(domainList)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for _, domain := range domainList {
+		choice := r.Intn(domain[1] - domain[0]) + domain[0]
+		bestSchedule = append(bestSchedule, choice)
+	}
+
+	//Main loop
+	for {
+		//Create list of neighboring solutions
+		var neighbors [][]int
+		fmt.Println("start", bestSchedule)
+
+		for i := 0; i < len(domainList); i ++ {
+			//One away in each direction
+			if bestSchedule[i] > domainList[i][0] {
+				newSchedule := make([]int, len(bestSchedule))
+				copy(newSchedule, bestSchedule)
+				newSchedule[i] = bestSchedule[i]-1
+				neighbors = append(neighbors, newSchedule)
+			}
+			if bestSchedule[i] < domainList[i][1] {
+				newSchedule := make([]int, len(bestSchedule))
+				copy(newSchedule, bestSchedule)
+				newSchedule[i] = bestSchedule[i]+1
+				neighbors = append(neighbors, newSchedule)
+			}
+		}
+
+		//See what the best solution amongst the neighbors is
+		current := costF(bestSchedule)
+		best := current
+		for j := 0; j < len(neighbors); j ++ {
+			cost := costF(neighbors[j])
+			//fmt.Println("neighbors", neighbors[j], cost)
+			if cost < best {
+				best = cost
+				bestSchedule = neighbors[j]
+			}
+		}
+
+		//If there's no improvement, then we've reached the top
+		if best == current {
+			break
+		}
+		fmt.Println("best", bestSchedule)
+	}
+
+	return bestSchedule
+}
+
+//退火法优化
+func optimizeAnealing(domainList [][2]int, costF func([]int) int64, t, cool float64, step int) []int {
+	var bestSchedule []int
+
+	fmt.Println(domainList)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for _, domain := range domainList {
+		choice := r.Intn(domain[1] - domain[0]) + domain[0]
+		bestSchedule = append(bestSchedule, choice)
+	}
+
+	//Main loop
+	for (t > 0.1) {
+		//Choose one of the indices
+		i := r.Intn(len(domainList))
+
+		//Choose a direction to change it
+		dir := r.Intn(2*step) - step
+
+		//Create a new list with one of the values changed
+		newSchedule := make([]int, len(bestSchedule))
+		copy(newSchedule, bestSchedule)
+		newSchedule[i] += dir
+		if newSchedule[i] < domainList[i][0] {newSchedule[i] = domainList[i][0]}
+		if newSchedule[i] > domainList[i][1] {newSchedule[i] = domainList[i][1]}
+
+		//Calculate the current cost and the new cost
+		best := costF(bestSchedule)
+		cost := costF(newSchedule)
+		p := math.Exp(float64(-(cost-best))/t)
+		if cost < best || r.Float64() < p {
+			bestSchedule = newSchedule
+		}
+
+		t = t*cool
 	}
 
 	return bestSchedule
@@ -162,21 +259,34 @@ func main() {
 	}
 
 	//打印看看
-	var schedule []int = []int{1, 4, 3, 2, 7, 3, 6, 3, 2, 4, 5, 3}//依次表示每个人选择的往返航班的编号
-	fmt.Println("origin schedule", schedule)
-	printSchedule(schedule)
-	//println(getMinutes("8:25"))
-	println(costSchedule(schedule))
+	//var schedule []int = []int{1, 4, 3, 2, 7, 3, 6, 3, 2, 4, 5, 3}//依次表示每个人选择的往返航班的编号
+	//fmt.Println("origin schedule", schedule)
+	//printSchedule(schedule)
+	//fmt.Println("origin cost", costSchedule(schedule))
 
-	//随机优化
 	domainList := make([][2]int, 0)
 	for i := 0; i < len(GPeople); i++ {
 		domainList = append(domainList, [2]int{0, 9})
 		domainList = append(domainList, [2]int{0, 9})
 	}
-	//fmt.Println(domainList)
-	bestSchedule := optimizeRandom(domainList, costSchedule)
-	fmt.Println("optimize schedule", bestSchedule)
+
+	var bestSchedule []int
+	//随机优化
+	//bestSchedule = optimizeRandom(domainList, costSchedule)
+	//fmt.Println("random schedule", bestSchedule)
+	//printSchedule(bestSchedule)
+	//fmt.Println("random cost", costSchedule(bestSchedule))
+
+	//登山法优化
+	//bestSchedule = optimizeHillClimb(domainList, costSchedule)
+	//fmt.Println("hillclimb schedule", bestSchedule)
+	//printSchedule(bestSchedule)
+	//fmt.Println("hillclimb cost", costSchedule(bestSchedule))
+
+	//退火法优化
+	bestSchedule = optimizeAnealing(domainList, costSchedule, 1000, 0.95, 1)
+	fmt.Println("anealing schedule", bestSchedule)
 	printSchedule(bestSchedule)
-	fmt.Println("optimize cost", costSchedule(bestSchedule))
+	fmt.Println("anealing cost", costSchedule(bestSchedule))
+
 }
